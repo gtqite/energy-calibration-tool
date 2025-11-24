@@ -3,3 +3,4 @@ pandas
 numpy
 plotly
 scipy
+git+https://github.com/LBNL-ETA/EnergyPlus-MCP.git
