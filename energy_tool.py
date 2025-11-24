@@ -27,30 +27,31 @@ uploaded_file = st.sidebar.file_uploader("Upload Monthly CSV (Columns: Month, kW
 # Since we cannot run the .exe here, we simulate the physics response mathematically.
 
 def run_energyplus_simulation(inputs):
-    """
-    Simulates an EnergyPlus run.
-    inputs: list of parameters [Lighting_Power_Density, Cooling_Setpoint, Heating_Efficiency]
-    returns: numpy array of 12 monthly kWh values
-    """
-    # Unpack parameters
-    lpd = inputs[0]        # Lighting Power Density (W/sqft)
-    clg_setpoint = inputs[1] # Cooling Setpoint (F)
-    heat_eff = inputs[2]   # Heating Efficiency (0-1)
+    # Import the LBNL library
+from energyplus_mcp import Sensitivity, Calibration
+
+def run_real_calibration(uploaded_idf, utility_data):
+    # 1. Setup the calibrator
+    calibrator = Calibration.Calibrator(
+        model_path=uploaded_idf, 
+        weather_path="USA_CA_San.Francisco.epw"
+    )
+
+    # 2. Feed it the utility bill data (CSV)
+    calibrator.load_observation_data(utility_data)
+
+    # 3. Define what to vary (The "Knobs")
+    # The library has built-in definitions for common variables
+    calibrator.set_parameters([
+        {'name': 'Lights', 'min': 0.5, 'max': 2.0},
+        {'name': 'Cooling_Setpoint', 'min': 20, 'max': 26}
+    ])
+
+    # 4. Run the Bayesian Calibration
+    # This takes time! (Minutes to Hours)
+    results = calibrator.run()
     
-    # Base load (lighting + plug loads)
-    base_load = (lpd * bldg_area * 250) # Simplified monthly hours
-    
-    # Seasonal factors (Mocking weather impact)
-    # Jan(0) to Dec(11)
-    seasonal_profile = np.array([0.8, 0.7, 0.6, 0.8, 1.1, 1.4, 1.6, 1.6, 1.3, 1.0, 0.8, 0.9])
-    
-    # Physics logic: Higher setpoint = Lower cooling energy
-    cooling_factor = (80 - clg_setpoint) * -0.05 + 1.0
-    
-    # Calculate total kWh
-    monthly_kwh = (base_load * 0.6) + (base_load * 0.4 * seasonal_profile * cooling_factor)
-    
-    return monthly_kwh
+    return results
 
 # --- CALIBRATION LOGIC ---
 def objective_function(params, actual_data):
@@ -169,4 +170,5 @@ else:
         "kWh": [45000, 42000, 40000, 48000, 55000, 65000, 72000, 73000, 60000, 50000, 46000, 47000]
     }
     sample_df = pd.DataFrame(sample_data)
+
     st.download_button("Download Sample CSV", sample_df.to_csv(index=False).encode('utf-8'), "sample_utility_data.csv")
